@@ -66,6 +66,7 @@ def _joint_probabilities(distances, labels, label_importance, rep_sample,
     # Compute conditional probabilities such that they approximately match
     # the desired perplexity
     distances = astype(distances, np.float32, copy=False)
+    labels = astype(labels, np.int64, copy=False)
     conditional_P = _utils._binary_search_perplexity(
         distances, None, labels, label_importance,
         rep_sample, desired_perplexity, verbose)
@@ -116,6 +117,7 @@ def _joint_probabilities_nn(distances, neighbors, labels, label_importance,
     # Compute conditional probabilities such that they approximately match
     # the desired perplexity
     distances = astype(distances, np.float32, copy=False)
+    labels = astype(labels, np.int64, copy=False)
     neighbors = astype(neighbors, np.int64, copy=False)
     conditional_P = _utils._binary_search_perplexity(
         distances, neighbors, labels, label_importance,
