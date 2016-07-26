@@ -14,6 +14,9 @@ cdef float PERPLEXITY_TOLERANCE = 1e-5
 cpdef np.ndarray[np.float32_t, ndim=2] _binary_search_perplexity(
         np.ndarray[np.float32_t, ndim=2] affinities,
         np.ndarray[np.int64_t, ndim=2] neighbors,
+        np.ndarray[np.int64_t, ndim=1] labels,
+        float label_importance,
+        int rep_samples,
         float desired_perplexity,
         int verbose):
     """Binary search for sigmas of conditional Gaussians.
@@ -30,6 +33,15 @@ cpdef np.ndarray[np.float32_t, ndim=2] _binary_search_perplexity(
         Each row contains the indices to the K nearest neigbors. If this
         array is None, then the perplexity is estimated over all data
         not just the nearest neighbors.
+
+    labels : array-like, shape (n_samples,)
+        Integer labels for the samples. Unlabelled samples should have label -1.
+        
+    label_importance : float
+        Relative importance to place on labelling
+        
+    rep_sample : int
+        Whether the partial labels are a representative sample of the full labelling
 
     desired_perplexity : float
         Desired perplexity (2^entropy) of the conditional Gaussians.
@@ -62,9 +74,16 @@ cpdef np.ndarray[np.float32_t, ndim=2] _binary_search_perplexity(
     cdef float entropy
     cdef float sum_Pi
     cdef float sum_disti_Pi
+    cdef float prior_prob
+    
     cdef long i, j, k, l = 0
     cdef long K = n_samples
     cdef int using_neighbors = neighbors is not None
+
+    cdef np.ndarray[long, ndim=1] label_sizes = np.bincount(labels + 1)
+    cdef long n_same_label
+    cdef long n_other_label
+    cdef long n_unlabelled = label_sizes[0]
 
     if using_neighbors:
         K = neighbors.shape[1]
@@ -135,4 +154,77 @@ cpdef np.ndarray[np.float32_t, ndim=2] _binary_search_perplexity(
     if verbose:
         print("[t-SNE] Mean sigma: %f"
               % np.mean(math.sqrt(n_samples / beta_sum)))
+              
+    for i in range(n_samples):
+    
+        sum_Pi = 0
+        
+        if using_neighbors:
+        
+            for k in range(K):
+                j = neighbors[i, k]
+
+                n_same_label = label_sizes[labels[i] + 1]
+                n_other_label = n_samples - n_same_label - n_unlabelled
+                    
+                if rep_sample:
+                    
+                    denominator = n_same_label ** 2 + n_other_label ** 2 + n_unlabelled ** 2
+
+                    if labels[i] == -1 or labels[j] == -1:
+                        prior_prob = n_unlabelled / denominator
+                    elif labels[j] == labels[i]:
+                        prior_prob = (n_same_label / denominator) + (label_importance / n_same_label)
+                    else:
+                        prior_prob = (n_other_label / denominator) - (label_importance / n_other_label)
+
+                else:
+                    
+                    if labels[i] == -1 or labels[j] == -1:
+                        prior_prob = 1.0 / n_samples
+                    elif labels[j] == labels[i]:
+                        prior_prob = (1.0 / n_samples) + (label_importance / n_same_label)
+                    else:
+                        prior_prob = (1.0 / n_samples) - (label_importance / n_other_label)
+
+                P[i, j] *= prior_prob
+                sum_Pi += P[i, j]
+            
+            for k in range(K):
+                j = neighbors[i, k]
+                P[i, j] /= sum_Pi
+                
+        else:
+        
+            for j in range(K):
+                
+                n_same_label = label_sizes[labels[i] + 1]
+                n_other_label = n_samples - n_same_label - n_unlabelled
+                    
+                if rep_sample:
+                    
+                    denominator = n_same_label ** 2 + n_other_label ** 2 + n_unlabelled ** 2
+
+                    if labels[i] == -1 or labels[j] == -1:
+                        prior_prob = n_unlabelled / denominator
+                    elif labels[j] == labels[i]:
+                        prior_prob = (n_same_label / denominator) + (epsilon / n_same_label)
+                    else:
+                        prior_prob = (n_other_label / denominator) - (epsilon / n_other_label)
+
+                else:
+                    
+                    if labels[i] == -1 or labels[j] == -1:
+                        prior_prob = 1.0 / n_samples
+                    elif labels[j] == labels[i]:
+                        prior_prob = (1.0 / n_samples) + (epsilon / n_same_label)
+                    else:
+                        prior_prob = (1.0 / n_samples) - (epsilon / n_other_label)
+
+                P[i, j] *= prior_prob
+                sum_Pi += P[i, j]
+            
+            for j in range(K):
+                P[i, j] /= sum_Pi
+
     return P
