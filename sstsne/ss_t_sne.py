@@ -30,7 +30,8 @@ from sklearn.utils.fixes import astype
 MACHINE_EPSILON = np.finfo(np.double).eps
 
 
-def _joint_probabilities(distances, desired_perplexity, verbose):
+def _joint_probabilities(distances, labels, label_importance, rep_sample,
+                         desired_perplexity, verbose):
     """Compute joint probabilities p_ij from distances.
 
     Parameters
@@ -39,6 +40,17 @@ def _joint_probabilities(distances, desired_perplexity, verbose):
         Distances of samples are stored as condensed matrices, i.e.
         we omit the diagonal and duplicate entries and store everything
         in a one-dimensional array.
+
+    labels : array, shape (n_samples,)
+        An integer labelling of each sample, with unknown samples given
+        the label -1.
+
+    label_importance: float
+        How much to deviate from a uniform prior via the label classes.
+
+    rep_samples: boolean
+        Whether the partial labelling is a representative sample of
+        the full (and unknown) labelling.
 
     desired_perplexity : float
         Desired perplexity of the joint probability distributions.
@@ -55,14 +67,16 @@ def _joint_probabilities(distances, desired_perplexity, verbose):
     # the desired perplexity
     distances = astype(distances, np.float32, copy=False)
     conditional_P = _utils._binary_search_perplexity(
-        distances, None, desired_perplexity, verbose)
+        distances, None, labels, label_importance,
+        rep_sample, desired_perplexity, verbose)
     P = conditional_P + conditional_P.T
     sum_P = np.maximum(np.sum(P), MACHINE_EPSILON)
     P = np.maximum(squareform(P) / sum_P, MACHINE_EPSILON)
     return P
 
 
-def _joint_probabilities_nn(distances, neighbors, desired_perplexity, verbose):
+def _joint_probabilities_nn(distances, neighbors, labels, label_importance,
+                            rep_sample, desired_perplexity, verbose):
     """Compute joint probabilities p_ij from distances using just nearest
     neighbors.
 
@@ -76,6 +90,17 @@ def _joint_probabilities_nn(distances, neighbors, desired_perplexity, verbose):
         Distances of samples are stored as condensed matrices, i.e.
         we omit the diagonal and duplicate entries and store everything
         in a one-dimensional array.
+
+    labels : array, shape (n_samples,)
+        An integer labelling of each sample, with unknown samples given
+        the label -1.
+
+    label_importance: float
+        How much to deviate from a uniform prior via the label classes.
+
+    rep_samples: boolean
+        Whether the partial labelling is a representative sample of
+        the full (and unknown) labelling.
 
     desired_perplexity : float
         Desired perplexity of the joint probability distributions.
@@ -93,7 +118,8 @@ def _joint_probabilities_nn(distances, neighbors, desired_perplexity, verbose):
     distances = astype(distances, np.float32, copy=False)
     neighbors = astype(neighbors, np.int64, copy=False)
     conditional_P = _utils._binary_search_perplexity(
-        distances, neighbors, desired_perplexity, verbose)
+        distances, neighbors, labels, label_importance,
+        rep_sample, desired_perplexity, verbose)
     m = "All probabilities should be finite"
     assert np.all(np.isfinite(conditional_P)), m
     P = conditional_P + conditional_P.T
@@ -495,8 +521,8 @@ def trustworthiness(X, X_embedded, n_neighbors=5, precomputed=False):
     return t
 
 
-class TSNE(BaseEstimator):
-    """t-distributed Stochastic Neighbor Embedding.
+class SemiSupervisedTSNE(BaseEstimator):
+    """Semi Supervised t-distributed Stochastic Neighbor Embedding.
 
     t-SNE [1] is a tool to visualize high-dimensional data. It converts
     similarities between data points to joint probabilities and tries
@@ -512,12 +538,30 @@ class TSNE(BaseEstimator):
     noise and speed up the computation of pairwise distances between
     samples. For more tips see Laurens van der Maaten's FAQ [2].
 
-    Read more in the :ref:`User Guide <t_sne>`.
+    This semi-supervised version of t-SNE supports an incomplete labelling
+    being supplied. This labelling is then used to inform the dimension
+    reduction such that samples with the same label are more likely to
+    be close, while samples with different labels are more likely to be
+    separated.
+
+    Read more in the sklearn :ref:`User Guide <t_sne>`.
 
     Parameters
     ----------
     n_components : int, optional (default: 2)
         Dimension of the embedded space.
+
+    label_importance : float, optional (default: 1.0)
+        How much to weight the importance of the labels when determining
+        the transformation. In practice this determines how far from
+        a uniform distribution to make the label based prior.
+
+    class_sizes_are_representative : boolean, optional (default: False)
+        If label class sizes are representative of the full/true labelling
+        then we can weight the prior using class sizes, which can account
+        for significant variance in class sizes well. Unless youn know that
+        you have a representative sample labelled it is best to leave this
+        False.
 
     perplexity : float, optional (default: 30)
         The perplexity is related to the number of nearest neighbors that
@@ -640,7 +684,8 @@ class TSNE(BaseEstimator):
         http://lvdmaaten.github.io/publications/papers/JMLR_2014.pdf
     """
 
-    def __init__(self, n_components=2, perplexity=30.0,
+    def __init__(self, n_components=2, label_importance=1.0,
+                 class_sizes_are_representative=False, perplexity=30.0,
                  early_exaggeration=4.0, learning_rate=1000.0, n_iter=1000,
                  n_iter_without_progress=30, min_grad_norm=1e-7,
                  metric="euclidean", init="random", verbose=0,
@@ -649,6 +694,8 @@ class TSNE(BaseEstimator):
             msg = "'init' must be 'pca', 'random' or a NumPy array"
             raise ValueError(msg)
         self.n_components = n_components
+        self.label_importance = label_importance
+        self.class_sizes_are_representative = class_sizes_are_representative
         self.perplexity = perplexity
         self.early_exaggeration = early_exaggeration
         self.learning_rate = learning_rate
@@ -664,7 +711,8 @@ class TSNE(BaseEstimator):
         self.embedding_ = None
 
     def _fit(self, X, skip_num_points=0):
-        """Fit the model using X as training data.
+        """Fit the model using X as training data, and y
+        as the (partial) labelling.
 
         Note that sparse arrays can only be handled by method='exact'.
         It is recommended that you convert your sparse array to dense
@@ -679,6 +727,9 @@ class TSNE(BaseEstimator):
             when method='barnes_hut', X cannot be a sparse array and if need be
             will be converted to a 32 bit float array. Method='exact' allows
             sparse arrays and 64bit floating point inputs.
+
+        y : array, shape (n_samples,)
+            Labels must be integers, with unlabelled points given the label -1.
 
         skip_num_points : int (optional, default:0)
             This does not compute the gradient for points with indices below
@@ -756,10 +807,15 @@ class TSNE(BaseEstimator):
                 # set the neighbors to n - 1
                 distances_nn, neighbors_nn = bt.query(X, k=k + 1)
                 neighbors_nn = neighbors_nn[:, 1:]
-            P = _joint_probabilities_nn(distances, neighbors_nn,
+            P = _joint_probabilities_nn(distances, neighbors_nn, y,
+                                        self.label_importance,
+                                        self.class_sizes_are_representative,
                                         self.perplexity, self.verbose)
         else:
-            P = _joint_probabilities(distances, self.perplexity, self.verbose)
+            P = _joint_probabilities(distances, y,
+                                     self.label_importance,
+                                     self.class_sizes_are_representative,
+                                     self.perplexity, self.verbose)
         assert np.all(np.isfinite(P)), "All probabilities should be finite"
         assert np.all(P >= 0), "All probabilities should be zero or positive"
         assert np.all(P <= 1), ("All probabilities should be less "
@@ -860,7 +916,7 @@ class TSNE(BaseEstimator):
 
         return X_embedded
 
-    def fit_transform(self, X, y=None):
+    def fit_transform(self, X, y):
         """Fit X into an embedded space and return that transformed
         output.
 
@@ -870,16 +926,21 @@ class TSNE(BaseEstimator):
             If the metric is 'precomputed' X must be a square distance
             matrix. Otherwise it contains a sample per row.
 
+        y : array, shape (n_samples,)
+            A (partial) labelling of the samples. The array should provide
+            a label value for each sample. Labels must be integers, with
+            unlabelled points given the label -1.
+
         Returns
         -------
         X_new : array, shape (n_samples, n_components)
             Embedding of the training data in low-dimensional space.
         """
-        embedding = self._fit(X)
+        embedding = self._fit(X, y)
         self.embedding_ = embedding
         return self.embedding_
 
-    def fit(self, X, y=None):
+    def fit(self, X, y):
         """Fit X into an embedded space.
 
         Parameters
@@ -889,6 +950,11 @@ class TSNE(BaseEstimator):
             matrix. Otherwise it contains a sample per row. If the method
             is 'exact', X may be a sparse matrix of type 'csr', 'csc'
             or 'coo'.
-        """
-        self.fit_transform(X)
+
+        y : array, shape (n_samples,)
+            A (partial) labelling of the samples. The array should provide
+            a label value for each sample. Labels must be integers, with
+            unlabelled points given the label -1.
+         """
+        self.fit_transform(X, y)
         return self
