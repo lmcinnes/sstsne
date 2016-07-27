@@ -167,7 +167,7 @@ cpdef np.ndarray[np.float32_t, ndim=2] _binary_search_perplexity(
                 n_same_label = label_sizes[labels[i] + 1]
                 n_other_label = n_samples - n_same_label - n_unlabelled
                     
-                if rep_sample:
+                if rep_samples:
                     
                     denominator = n_same_label ** 2 + n_other_label ** 2 + n_unlabelled ** 2
 
@@ -201,25 +201,25 @@ cpdef np.ndarray[np.float32_t, ndim=2] _binary_search_perplexity(
                 n_same_label = label_sizes[labels[i] + 1]
                 n_other_label = n_samples - n_same_label - n_unlabelled
                     
-                if rep_sample:
+                if rep_samples:
                     
                     denominator = n_same_label ** 2 + n_other_label ** 2 + n_unlabelled ** 2
 
                     if labels[i] == -1 or labels[j] == -1:
                         prior_prob = n_unlabelled / denominator
                     elif labels[j] == labels[i]:
-                        prior_prob = (n_same_label / denominator) + (epsilon / n_same_label)
+                        prior_prob = (n_same_label / denominator) + (label_importance / n_same_label)
                     else:
-                        prior_prob = (n_other_label / denominator) - (epsilon / n_other_label)
+                        prior_prob = (n_other_label / denominator) - (label_importance / n_other_label)
 
                 else:
                     
                     if labels[i] == -1 or labels[j] == -1:
                         prior_prob = 1.0 / n_samples
                     elif labels[j] == labels[i]:
-                        prior_prob = (1.0 / n_samples) + (epsilon / n_same_label)
+                        prior_prob = (1.0 / n_samples) + (label_importance / n_same_label)
                     else:
-                        prior_prob = (1.0 / n_samples) - (epsilon / n_other_label)
+                        prior_prob = (1.0 / n_samples) - (label_importance / n_other_label)
 
                 P[i, j] *= prior_prob
                 sum_Pi += P[i, j]
