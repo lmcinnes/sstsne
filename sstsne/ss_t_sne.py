@@ -712,7 +712,7 @@ class SemiSupervisedTSNE(BaseEstimator):
         self.angle = angle
         self.embedding_ = None
 
-    def _fit(self, X, skip_num_points=0):
+    def _fit(self, X, y, skip_num_points=0):
         """Fit the model using X as training data, and y
         as the (partial) labelling.
 

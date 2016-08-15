@@ -174,18 +174,18 @@ cpdef np.ndarray[np.float32_t, ndim=2] _binary_search_perplexity(
                     if labels[i] == -1 or labels[j] == -1:
                         prior_prob = n_unlabelled / denominator
                     elif labels[j] == labels[i]:
-                        prior_prob = (n_same_label / denominator) + (label_importance / n_same_label)
+                        prior_prob = min((n_same_label / denominator) + (label_importance / n_same_label), 1.0 - EPSILON_DBL)
                     else:
-                        prior_prob = (n_other_label / denominator) - (label_importance / n_other_label)
+                        prior_prob = max((n_other_label / denominator) - (label_importance / n_other_label), EPSILON_DBL)
 
                 else:
                     
                     if labels[i] == -1 or labels[j] == -1:
                         prior_prob = 1.0 / n_samples
                     elif labels[j] == labels[i]:
-                        prior_prob = (1.0 / n_samples) + (label_importance / n_same_label)
+                        prior_prob = min((1.0 / n_samples) + (label_importance / n_same_label), 1.0 - EPSILON_DBL)
                     else:
-                        prior_prob = (1.0 / n_samples) - (label_importance / n_other_label)
+                        prior_prob = max((1.0 / n_samples) - (label_importance / n_other_label), EPSILON_DBL)
 
                 P[i, j] *= prior_prob
                 sum_Pi += P[i, j]
@@ -208,18 +208,18 @@ cpdef np.ndarray[np.float32_t, ndim=2] _binary_search_perplexity(
                     if labels[i] == -1 or labels[j] == -1:
                         prior_prob = n_unlabelled / denominator
                     elif labels[j] == labels[i]:
-                        prior_prob = (n_same_label / denominator) + (label_importance / n_same_label)
+                        prior_prob = min((n_same_label / denominator) + (label_importance / n_same_label), 1.0 - EPSILON_DBL)
                     else:
-                        prior_prob = (n_other_label / denominator) - (label_importance / n_other_label)
+                        prior_prob = max((n_other_label / denominator) - (label_importance / n_other_label), EPSILON_DBL)
 
                 else:
                     
                     if labels[i] == -1 or labels[j] == -1:
                         prior_prob = 1.0 / n_samples
                     elif labels[j] == labels[i]:
-                        prior_prob = (1.0 / n_samples) + (label_importance / n_same_label)
+                        prior_prob = min((1.0 / n_samples) + (label_importance / n_same_label), 1.0 - EPSILON_DBL)
                     else:
-                        prior_prob = (1.0 / n_samples) - (label_importance / n_other_label)
+                        prior_prob = max((1.0 / n_samples) - (label_importance / n_other_label), EPSILON_DBL)
 
                 P[i, j] *= prior_prob
                 sum_Pi += P[i, j]
