@@ -18,7 +18,7 @@ _utils = Extension('sstsne._utils',
 
 _barnes_hut_tsne = Extension('sstsne._barnes_hut_tsne',
                              sources=['sstsne/_barnes_hut_tsne.pyx'],
-                             include_dirs=[numpy.get_include()])
+                             include_dirs=[numpy.get_include(), '/System/Library/Frameworks/Accelerate.framework/Versions/A/Frameworks/vecLib.framework/Versions/A/Headers/'])
 
 def readme():
     with open('README.md') as readme_file:
